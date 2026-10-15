@@ -1,0 +1,21 @@
+# 运行时数据 (每台机器各自生成, 不入库)
+userdata/
+cover_cache/
+diag.txt
+*.log
+
+# 编译中间产物
+*.pdb
+*.win32manifest
+MusicBox.exe.config
+
+# 临时 / 测试
+_test*/
+_dbg*/
+*.tmp
+~$*
+
+# 系统
+Thumbs.db
+desktop.ini
+.DS_Store

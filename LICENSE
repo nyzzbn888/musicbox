@@ -1,0 +1,36 @@
+MIT License
+
+Copyright (c) 2026 MusicBox (Free) contributors
+
+Permission is hereby granted, free of charge, to any person obtaining a copy
+of this software and associated documentation files (the "Software"), to deal
+in the Software without restriction, including without limitation the rights
+to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
+copies of the Software, and to permit persons to whom the Software is
+furnished to do so, subject to the following conditions:
+
+The above copyright notice and this permission notice shall be included in all
+copies or substantial portions of the Software.
+
+THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
+IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
+AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
+LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
+OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
+SOFTWARE.
+
+---------------------------------------------------------------------------
+NOTE / 附加说明
+
+This license applies to the source code of MusicBox (Free) only.
+
+It does NOT grant any rights to the music, video, cover art, playlist or
+metadata shown by the application. Such content is retrieved from third-party
+services (YouTube, Spotify, Deezer) at runtime and remains the property of its
+respective owners. This project is not affiliated with, authorized by, or
+endorsed by any of those services.
+
+本许可仅适用于 MusicBox（免费）的源代码，不涉及应用运行时从第三方服务
+（YouTube / Spotify / Deezer）获取的音乐、视频、封面、歌单或元数据，
+这些内容的权利归各自所有者。本项目与上述服务无任何关联或授权关系。
