@@ -1,0 +1,32 @@
+﻿hajimi客户端 · 免费音乐播放器
+
+【怎么用】
+双击 MusicBox.exe 即可运行（桌面上一般也有快捷方式）。
+无需安装任何东西，程序自带所需的运行库。
+
+【功能】
+· 完整听：YouTube 完整歌曲，内置播放器 16:9 大画面
+· 搜索：全网曲库官方 30 秒试听
+· 本地音乐：MP3 / FLAC / WAV / M4A，支持拖拽导入
+· 收藏 / 歌单 / 播放历史 / 睡眠定时
+· 右上角按钮可切换 中文 / English
+
+【数据位置】
+收藏、歌单、历史、封面缓存都保存在本目录下的 userdata 与 cover_cache 文件夹。
+删除这两个文件夹即彻底清除个人数据，程序本身不受影响。
+
+【重要：请勿只复制 MusicBox.exe】
+同目录下的 3 个 DLL（Microsoft.Web.WebView2.Core.dll / Microsoft.Web.WebView2.WinForms.dll /
+WebView2Loader.dll）是内置视频播放器必需的。少了它们，「完整播放」会提示"内置播放器不可用"。
+
+【系统要求】
+Windows 10 / 11（64 位）
+音频播放需要系统自带的 Windows Media Player 组件。
+内置视频还需 WebView2 运行时（Win11 自带；Win10 通常随 Edge 安装好，缺了程序会提示下载地址）。
+
+【卸载】
+在「设置 → 应用 → 已安装的应用」里找到 hajimi客户端 卸载，或运行安装目录下的 unins000.exe。
+
+【免责声明】
+本软件仅供个人学习与技术演示，与 YouTube / Spotify / Deezer / Apple 无关联。
+不下载、不存储、不分发任何受版权保护的内容，请勿用于商业用途。

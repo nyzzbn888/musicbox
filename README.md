@@ -16,10 +16,16 @@
 
 | 方式 | 文件 | 说明 |
 |---|---|---|
-| 🚀 **一键安装**（推荐） | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.7/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，**免管理员权限**，可在「应用和功能」里卸载 |
-| 📦 免安装 | [`MusicBox.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.7/MusicBox.exe) | 单文件双击即用，不写注册表 |
-| 🧳 分享包 | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.7/MusicBox-Share.zip) | 含 WebView2 运行库 DLL，解压即用 |
+| 🧳 **绿色版（推荐，最稳）** | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.8/MusicBox-Share.zip) | 解压即用，**内含内置播放器必需的 WebView2 DLL**，不写注册表、不装任何东西 |
+| 🚀 **一键安装** | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.8/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，免管理员权限，可在「应用和功能」里卸载 |
 
+> ⚠️ **请不要只单独拿 `MusicBox.exe`**：内置视频播放器需要同目录下的 3 个 WebView2 DLL
+> （`Microsoft.Web.WebView2.Core.dll` / `Microsoft.Web.WebView2.WinForms.dll` / `WebView2Loader.dll`）。
+> 只复制一个 exe 会导致「完整播放」无法在程序内播放——**v3.8 起这种情况会明确告诉你原因**，不再默默跳转浏览器。
+
+> 🛡️ 如果浏览器提示「`HajimiClient-Setup.exe` 已阻止 / 可能有害」：那是**未签名 exe 的信誉拦截，不是病毒**。
+> 两种解决办法：① 改用上面的**绿色版 ZIP**（ZIP 不会被拦）；② 在下载提示里选「保留 / 仍要下载」。
+> 安装包已从 PS2EXE 自解压改为标准 **Inno Setup** 格式，大幅降低杀软误报。
 【一键安装器长这样】
 
 ![安装程序](docs/screenshot-setup.png)
