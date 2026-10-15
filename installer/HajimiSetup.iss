@@ -1,4 +1,4 @@
-; ============================================================
+﻿; ============================================================
 ;  hajimi客户端 安装包 (Inno Setup)
 ;  为什么换掉原来的 PS2EXE 自解压安装器:
 ;   1) PS2EXE 打包的 exe + 内嵌 base64 负载, 极易被杀软/SmartScreen 当作
@@ -11,7 +11,7 @@
 ; ============================================================
 
 #define MyAppName "hajimi客户端"
-#define MyAppVersion "3.8.0"
+#define MyAppVersion "3.8.1"
 #define MyAppPublisher "hajimi"
 #define MyAppExeName "MusicBox.exe"
 

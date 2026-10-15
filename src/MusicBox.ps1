@@ -156,6 +156,8 @@ $script:L = @{
     'yt.reason_dll'      = @{ zh = "原因：缺少 WebView2 组件文件。`n请下载完整的分享包（含 MusicBox.exe 与 3 个 WebView2 DLL），`n或把这 3 个 DLL 放到 MusicBox.exe 同一个文件夹里。"; en = "Reason: WebView2 component files are missing.`nDownload the full share package (MusicBox.exe plus the 3 WebView2 DLLs),`nor place those DLLs next to MusicBox.exe." }
     'yt.reason_runtime'  = @{ zh = "原因：本机未安装 WebView2 运行时。`n可从微软官网免费下载安装：`nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703"; en = "Reason: the WebView2 Runtime is not installed.`nYou can download it for free from Microsoft:`nhttps://go.microsoft.com/fwlink/p/?LinkId=2124703" }
     'yt.reason_init'     = @{ zh = "原因：WebView2 初始化失败（运行时已装但无法启动）。"; en = "Reason: WebView2 failed to initialize (runtime present but could not start)." }
+    'yt.fix_hint'        = @{ zh = "点「是」= 打开修复用的下载页面；点「否」= 改用浏览器播放这个视频；点「取消」= 什么都不做。"; en = "Yes = open the download page that fixes this; No = play the video in your browser; Cancel = do nothing." }
+    'yt.fix_opened'      = @{ zh = "已打开修复下载页 · 装好后请重启本程序"; en = "Fix page opened - restart the app after installing" }
     'player.mode.full'   = @{ zh = "完整播放"; en = "Full Playback" }
     'player.mode.preview'= @{ zh = "官方试听 30s"; en = "30s Preview" }
     'player.mode.local'  = @{ zh = "本地播放"; en = "Local Playback" }
@@ -818,11 +820,17 @@ function Play-FreeWithYoutube {
     } else {
         # 内置播放器不可用时不再"默默把用户丢到浏览器", 而是说明原因并让用户选择
         Restore-NormalLayout
-        $reason = Get-YtProblemReason
-        Write-YtLog ("embedded player unavailable -> " + $reason)
-        $msg = (T 'yt.unavailable') + "`n`n" + $reason + "`n`n" + (T 'yt.fallback_ask')
-        $r = [System.Windows.Forms.MessageBox]::Show($msg, (T 'yt.unavailable_title'), "YesNo", "Warning")
-        if ($r -eq "Yes") {
+        $diag = Get-YtProblemDiag
+        Write-YtLog ("embedded player unavailable -> " + $diag.Text)
+        $msg = (T 'yt.unavailable') + "`n`n" + $diag.Text
+        if ($diag.URL -and $diag.URL -ne "") { $msg += "`n`n" + (T 'yt.fix_hint') }
+        $msg += "`n`n" + (T 'yt.fallback_ask')
+        $r = [System.Windows.Forms.MessageBox]::Show($msg, (T 'yt.unavailable_title'), "YesNoCancel", "Warning")
+        if ($r -eq "Yes" -and $diag.URL -and $diag.URL -ne "") {
+            try { Start-Process $diag.URL } catch { }
+            $script:lblModeTag.Text = (T 'yt.fix_opened')
+            $script:lblModeTag.ForeColor = $cWarn
+        } elseif ($r -eq "No") {
             try { Start-Process ("https://www.youtube.com/watch?v=" + $videoId) } catch { }
             $script:lblModeTag.Text = (T 'player.mode.ytbg')
             $script:lblModeTag.ForeColor = $cSuccess
@@ -833,13 +841,15 @@ function Play-FreeWithYoutube {
     }
 }
 
-# 判定"内置播放器为什么用不了", 给用户一个能看懂的原因
-function Get-YtProblemReason {
+# 判定"内置播放器为什么用不了": 返回 @{ Text = 给用户看的原因; URL = 可选的修复下载页 }
+function Get-YtProblemDiag {
     try {
         $dllCore = Test-Path -LiteralPath (Join-Path $appBase "Microsoft.Web.WebView2.Core.dll")
         $dllWin  = Test-Path -LiteralPath (Join-Path $appBase "Microsoft.Web.WebView2.WinForms.dll")
         $dllLdr  = Test-Path -LiteralPath (Join-Path $appBase "WebView2Loader.dll")
-        if (-not ($dllCore -and $dllWin -and $dllLdr)) { return (T 'yt.reason_dll') }
+        if (-not ($dllCore -and $dllWin -and $dllLdr)) {
+            return @{ Text = (T 'yt.reason_dll'); URL = "https://github.com/nyzzbn888/musicbox/releases/latest" }
+        }
         $rt = ""
         foreach ($k in @(
             "HKLM:\SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}",
@@ -848,10 +858,13 @@ function Get-YtProblemReason {
         )) {
             try { $v = (Get-ItemProperty -Path $k -ErrorAction Stop).pv; if ($v) { $rt = $v; break } } catch { }
         }
-        if (-not $rt) { return (T 'yt.reason_runtime') }
-        return ((T 'yt.reason_init') + "  (WebView2 Runtime " + $rt + ")")
+        if (-not $rt) {
+            return @{ Text = (T 'yt.reason_runtime'); URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703" }
+        }
+        # 运行时在但初始化失败: 常见于杀软拦截 WebView2 子进程 / 系统组件损坏
+        return @{ Text = ((T 'yt.reason_init') + "  (WebView2 Runtime " + $rt + ")"); URL = "https://go.microsoft.com/fwlink/p/?LinkId=2124703" }
     } catch {
-        return (T 'yt.reason_init')
+        return @{ Text = (T 'yt.reason_init'); URL = "" }
     }
 }
 function Play-TrackObject {
@@ -1324,7 +1337,7 @@ $script:chkAutoStart.Checked = $script:autoStart
 $pnlSidebar.Controls.Add($script:chkAutoStart)
 $script:chkAutoStart.Add_CheckedChanged({ $null = Set-AutoStart $script:chkAutoStart.Checked })
 
-$lblVer = New-Label "v3.7" 0 0 176 16 8 $cSub $false
+$lblVer = New-Label "v3.8.1" 0 0 176 16 8 $cSub $false
 $pnlSidebar.Controls.Add($lblVer)
 
 # ---------- 主内容区 ----------
@@ -1831,12 +1844,18 @@ $script:btnPlay.Add_Click({
                 $script:ytPlaying = $true
                 $script:btnPlay.Text = "❚❚"
             } else {
-                # 同样不再静默跳浏览器, 而是说明原因并让用户选择
-                $reason = Get-YtProblemReason
-                Write-YtLog ("embedded player unavailable (resume) -> " + $reason)
-                $msg = (T 'yt.unavailable') + "`n`n" + $reason + "`n`n" + (T 'yt.fallback_ask')
-                $r = [System.Windows.Forms.MessageBox]::Show($msg, (T 'yt.unavailable_title'), "YesNo", "Warning")
-                if ($r -eq "Yes") {
+                # 同样不再静默跳浏览器, 而是说明原因并给出可点的一键修复
+                $diag = Get-YtProblemDiag
+                Write-YtLog ("embedded player unavailable (resume) -> " + $diag.Text)
+                $msg = (T 'yt.unavailable') + "`n`n" + $diag.Text
+                if ($diag.URL -and $diag.URL -ne "") { $msg += "`n`n" + (T 'yt.fix_hint') }
+                $msg += "`n`n" + (T 'yt.fallback_ask')
+                $r = [System.Windows.Forms.MessageBox]::Show($msg, (T 'yt.unavailable_title'), "YesNoCancel", "Warning")
+                if ($r -eq "Yes" -and $diag.URL -and $diag.URL -ne "") {
+                    try { Start-Process $diag.URL } catch { }
+                    $script:lblModeTag.Text = (T 'yt.fix_opened')
+                    $script:lblModeTag.ForeColor = $cWarn
+                } elseif ($r -eq "No") {
                     try { Start-Process ("https://www.youtube.com/watch?v=" + $vid) } catch { }
                     $script:lblModeTag.Text = (T 'player.mode.ytbg')
                     $script:lblModeTag.ForeColor = $cSuccess
