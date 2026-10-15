@@ -1,8 +1,8 @@
 # MusicBox（免费）· MusicBox (Free)
 
-一个 Windows 桌面音乐播放器：**Apple Music 风格界面** · **中英双语** · **响应式布局** · 全网搜索试听 + 本地音乐播放。
+一个 **Windows 10 / 11（64 位）** 桌面音乐播放器：**Apple Music 风格界面** · **中英双语** · **响应式布局** · 全网搜索试听 + 本地音乐播放。
 
-> A Windows desktop music player with an Apple Music–style UI, bilingual (中文 / English) interface, responsive layout, online 30-second previews and local music playback.
+> A **Windows 10 / 11 (64-bit)** desktop music player with an Apple Music–style UI, bilingual (中文 / English) interface, responsive layout, online 30-second previews and local music playback.
 
 ![中文界面](docs/screenshot-zh.png)
 
