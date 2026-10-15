@@ -1,5 +1,14 @@
 # 变更记录 · Changelog
 
+## v3.7 — 修复进入 YouTube 界面后整个窗口卡死
+**修复**
+- 🐛 **进入 YouTube 界面后所有按钮失效（含标题栏的最小化 / 最大化）**。原因是多种"锁死主窗口"的因素叠加，逐个处理：
+  1. **网页 JS 模态弹窗**（`alert` / `confirm` / `beforeunload`）：WebView2 默认会弹出模态框并**禁用整个主窗口**。现已设置 `AreDefaultScriptDialogsEnabled = false`，彻底不弹。
+  2. **首次初始化 WebView2 时 `DoEvents` 死等 20 秒**：改为事件驱动（记下待播视频，在 `CoreWebView2InitializationCompleted` 回调里再导航），不再阻塞 / 重入 UI 线程。
+  3. **进度定时器同步等待 WebView2 异步任务**（`ExecuteScriptAsync(...).Result`）：改为非阻塞的「取回上次结果 + 异步发起下次查询」，并修正了返回值 JSON 引号未剥离导致解析失败的问题。
+  4. **未处理异常**触发 WinForms 弹框同样会锁死主窗口：给定时器与布局函数加了 try/catch，并在启动时设置 `SetUnhandledExceptionMode(CatchException)` 全局兜底。
+- 🐛 修复 v3.7 开发过程中引入的 `Add_ProcessFailed` 事件名不存在问题（它会让异常吞掉后把整个 WebView2 功能禁用，导致内嵌播放器完全不可用）。
+- 🔧 新增 YouTube 路径全程日志（写入程序目录 `diag.txt`），再出现异常可按日志轨迹精确定位。
 ## v3.6 — 中英双语 + 便携化
 **新增**
 - 🌏 右上角按钮一键切换 **中文 / English**，全部界面文案（导航、标题、按钮、列表表头、状态提示、弹窗）实时切换，选择写入配置并在下次启动生效

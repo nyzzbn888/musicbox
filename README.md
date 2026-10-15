@@ -16,9 +16,9 @@
 
 | 方式 | 文件 | 说明 |
 |---|---|---|
-| 🚀 **一键安装**（推荐） | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.6/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，**免管理员权限**，可在「应用和功能」里卸载 |
-| 📦 免安装 | [`MusicBox.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.6/MusicBox.exe) | 单文件双击即用，不写注册表 |
-| 🧳 分享包 | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.6/MusicBox-Share.zip) | 含 WebView2 运行库 DLL，解压即用 |
+| 🚀 **一键安装**（推荐） | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.7/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，**免管理员权限**，可在「应用和功能」里卸载 |
+| 📦 免安装 | [`MusicBox.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.7/MusicBox.exe) | 单文件双击即用，不写注册表 |
+| 🧳 分享包 | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.7/MusicBox-Share.zip) | 含 WebView2 运行库 DLL，解压即用 |
 
 【一键安装器长这样】
 

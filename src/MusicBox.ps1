@@ -1,5 +1,6 @@
 ﻿# ============================================================
-#  MusicBox (Free) v3.6 - Apple Music 风格 · 响应式布局 · 中英双语
+#  MusicBox (Free) v3.7 - Apple Music 风格 · 响应式布局 · 中英双语
+#  v3.7 修复: 进入 YouTube 界面后整个窗口卡死 (UI 线程同步等待 WebView2 异步任务导致死锁)
 #  右上角按钮可切换 中文 / English, 选择会被记住
 #  设计: 左侧边栏 | 白色卡片 | 品牌红 #FA243C | 浅灰底 #F5F5F7
 #  响应式: 窗口任意缩放, 小窗/最大化/全屏(F11)自动重排;
@@ -11,6 +12,19 @@
 
 Add-Type -AssemblyName System.Windows.Forms
 Add-Type -AssemblyName System.Drawing
+
+# 全局兜底: 任何未处理异常都不要弹 WinForms 的"未处理异常"模态框
+# (那个框会禁用整个主窗口, 表现就是所有按钮含最小化/最大化全部点不动)
+try {
+    [System.Windows.Forms.Application]::SetUnhandledExceptionMode([System.Windows.Forms.UnhandledExceptionMode]::CatchException)
+    [System.Windows.Forms.Application]::add_ThreadException({
+        param($s, $e)
+        try {
+            $p = Join-Path ([System.IO.Path]::GetDirectoryName([System.Diagnostics.Process]::GetCurrentProcess().MainModule.FileName)) "diag.txt"
+            Add-Content -LiteralPath $p -Value ("[{0}] UNHANDLED: {1}" -f (Get-Date -Format "HH:mm:ss"), $e.Exception.Message) -Encoding UTF8
+        } catch { }
+    })
+} catch { }
 
 # 程序所在目录 (便携化: 数据目录跟随程序位置, 不再依赖固定盘符)
 # 优先用脚本目录(直接运行 .ps1 时), 否则用可执行文件目录(编译成 exe 时)
@@ -25,13 +39,21 @@ $script:hasYt = $false
 $ytBase = $appBase
 $ytCore = Join-Path $ytBase "Microsoft.Web.WebView2.Core.dll"
 $ytWin = Join-Path $ytBase "Microsoft.Web.WebView2.WinForms.dll"
+$ytDiag = Join-Path $ytBase "diag.txt"
 try {
     if ((Test-Path -LiteralPath $ytCore) -and (Test-Path -LiteralPath $ytWin)) {
         Add-Type -Path $ytWin
         Add-Type -Path $ytCore
         $script:hasYt = $true
+    } else {
+        Add-Content -LiteralPath $ytDiag -Value ("wv2 dll missing: core=" + (Test-Path -LiteralPath $ytCore) + " win=" + (Test-Path -LiteralPath $ytWin) + " base=" + $ytBase) -Encoding UTF8
     }
-} catch { $script:hasYt = $false }
+} catch {
+    $script:hasYt = $false
+    try {
+        Add-Content -LiteralPath $ytDiag -Value ("wv2 load fail: " + $_.Exception.GetType().Name + ": " + $_.Exception.Message + " | base=" + $ytBase) -Encoding UTF8
+    } catch { }
+}
 
 $ErrorActionPreference = "SilentlyContinue"
 
@@ -308,6 +330,11 @@ $script:ytDur = 0
 $script:ytLoadedUrl = ""   # 已在内置播放器载入的视频 (yt:<id>), 判断是否需要重新加载
 $script:cssCount = 0
 $script:ytMaximized = $false
+# 异步查询 YouTube 播放状态用 (绝不能在 UI 线程上 .Result 同步等待, 会死锁)
+$script:ytTask = $null
+$script:ytLastState = $null
+# 首次初始化 WebView2 时暂存待播视频, 就绪后再导航 (避免阻塞 UI 线程去等)
+$script:ytPendingVideo = ""
 $script:cacheDir = Join-Path $appBase "cover_cache"
 $script:dataDir = Join-Path $appBase "userdata"
 $script:favorites = @()
@@ -483,28 +510,66 @@ function Open-Platform {
 }
 
 # ---------- YouTube ----------
+# 把 YouTube 路径的关键步骤写进 diag.txt: 万一再卡住, 日志能直接指出停在哪一步
+function Write-YtLog($msg) {
+    try { Add-Content -LiteralPath (Join-Path $appBase "diag.txt") -Value ("[YT {0}] {1}" -f (Get-Date -Format "HH:mm:ss"), $msg) -Encoding UTF8 } catch { }
+}
+
+# 统一设置 WebView2 行为。最关键的一条是 AreDefaultScriptDialogsEnabled = $false:
+# 网页里的 alert/confirm/beforeunload 默认会弹出模态框并**禁用整个主窗口**,
+# 表现就是所有按钮(包括标题栏的最小化/最大化)全部点不动。
+function Apply-YtSettings {
+    try {
+        if ($null -eq $script:wbYT -or $null -eq $script:wbYT.CoreWebView2) { return }
+        $st = $script:wbYT.CoreWebView2.Settings
+        try { $st.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" } catch { }
+        try { $st.AreDefaultScriptDialogsEnabled = $false } catch { }   # 杜绝模态框锁死主窗口
+        try { $st.AreDefaultContextMenusEnabled = $false } catch { }
+        try { $st.AreBrowserAcceleratorKeysEnabled = $false } catch { }  # 别让网页抢 F5/F11 等快捷键
+        try { $st.IsStatusBarEnabled = $false } catch { }
+        try { $st.IsZoomControlEnabled = $false } catch { }
+        try { $st.IsPasswordAutosaveEnabled = $false } catch { }
+        try { $st.IsGeneralAutofillEnabled = $false } catch { }
+        Write-YtLog "settings applied (script dialogs disabled)"
+    } catch { Write-YtLog ("settings error: " + $_.Exception.Message) }
+}
+
 function Show-YoutubeEmbed {
     param($videoId)
     if (-not $script:hasYt -or $null -eq $script:wbYT) { return $false }
     try {
         if ($null -eq $script:wbYT.CoreWebView2) {
+            # 首次使用: CoreWebView2 还没就绪。
+            # 绝不在 UI 线程上用 while + DoEvents 死等 —— 那会阻塞并重入消息循环,
+            # 期间点任何按钮都可能出问题。改为记下待播视频, 在初始化完成事件里再导航。
+            $script:ytPendingVideo = $videoId
+            $script:ytLoadedUrl = "yt:$videoId"
+            $script:ytTask = $null
+            $script:ytLastState = $null
+            $script:ytDur = 0
+            $script:ytPlaying = $false
+            Write-YtLog "init requested, pending=$videoId"
             $script:wbYT.EnsureCoreWebView2Async($null) | Out-Null
-            $deadline = (Get-Date).AddSeconds(20)
-            while ($null -eq $script:wbYT.CoreWebView2 -and (Get-Date) -lt $deadline) {
-                [System.Windows.Forms.Application]::DoEvents()
-                Start-Sleep -Milliseconds 100
-            }
+            return $true
         }
-        if ($null -eq $script:wbYT.CoreWebView2) { return $false }
-        try { $script:wbYT.CoreWebView2.Settings.UserAgent = "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36" } catch { }
+        Apply-YtSettings
         $script:wbYT.Visible = $true
         if ($script:picCover) { $script:picCover.Visible = $false }
         if ($script:lblCoverEmpty) { $script:lblCoverEmpty.Visible = $false }
         $script:wbYT.Source = [uri]("https://www.youtube.com/watch?v=" + $videoId + "&autoplay=1")
         $script:ytLoadedUrl = "yt:$videoId"
+        # 清掉上一个视频的状态缓存, 避免进度条/时间显示上一首的数据
+        $script:ytTask = $null
+        $script:ytLastState = $null
+        $script:ytDur = 0
+        $script:ytPlaying = $false
+        Write-YtLog "navigate -> $videoId"
         if ($null -ne $script:cssTimer) { $script:cssCount = 0; $script:cssTimer.Stop(); $script:cssTimer.Start() }
         return $true
-    } catch { return $false }
+    } catch {
+        Write-YtLog ("show-embed error: " + $_.Exception.Message)
+        return $false
+    }
 }
 function Yt-Play {
     if (-not $script:hasYt -or $null -eq $script:wbYT -or $null -eq $script:wbYT.CoreWebView2) { return }
@@ -519,19 +584,36 @@ function Yt-Seek {
     if (-not $script:hasYt -or $null -eq $script:wbYT -or $null -eq $script:wbYT.CoreWebView2) { return }
     try { $null = $script:wbYT.CoreWebView2.ExecuteScriptAsync("(function(){var v=document.querySelector('#movie_player video')||document.querySelector('video');if(v){v.currentTime=$pos;}})();") } catch { }
 }
-function Yt-State {
-    if (-not $script:hasYt -or $null -eq $script:wbYT -or $null -eq $script:wbYT.CoreWebView2) { return $null }
+# 取回上一次异步查询的结果, 并发起下一次查询。
+# 关键: 全程不调用 .Result 同步等待 —— 在 UI 线程上同步等待 WebView2 的异步任务会死锁
+# (完成回调需要派发回同一个 UI 线程, 而该线程正被阻塞), 表现为整个窗口所有按钮,
+# 包括标题栏的最小化/最大化, 全部点不动。
+function Yt-PollState {
+    if ($null -ne $script:ytTask) {
+        if (-not $script:ytTask.IsCompleted) { return $script:ytLastState }   # 还没跑完, 先返回上次的值
+        try {
+            $r = $script:ytTask.Result
+            $script:ytTask = $null
+            if ($null -ne $r) {
+                $s = ([string]$r).Trim().Trim([char]0x22)   # ExecuteScriptAsync 返回的是 JSON 字符串
+                $parts = $s -split '\|'
+                if ($parts.Count -ge 3) {
+                    $script:ytLastState = @{ Pos = [double]$parts[0]; Dur = [double]$parts[1]; Playing = ($parts[2] -eq 'True') }
+                }
+            }
+        } catch { $script:ytTask = $null }
+    }
+    # 发起下一次查询 (立即返回, 不等待结果)
     try {
-        $js = "(function(){var v=document.querySelector('#movie_player video')||document.querySelector('video');if(!v){return 'none';}return (v.currentTime||0)+'|'+(v.duration||0)+'|'+(!v.paused);})();"
-        $r = $script:wbYT.CoreWebView2.ExecuteScriptAsync($js).Result
-        if ($null -eq $r) { return $null }
-        $parts = $r -split '\|'
-        if ($parts.Count -ge 3) {
-            return @{ Pos = [double]$parts[0]; Dur = [double]$parts[1]; Playing = ($parts[2] -eq 'True') }
+        if ($script:hasYt -and $null -ne $script:wbYT -and $null -ne $script:wbYT.CoreWebView2) {
+            $js = "(function(){var v=document.querySelector('#movie_player video')||document.querySelector('video');if(!v){return 'none';}return (v.currentTime||0)+'|'+(v.duration||0)+'|'+(!v.paused);})();"
+            $script:ytTask = $script:wbYT.CoreWebView2.ExecuteScriptAsync($js)
         }
-        return $null
-    } catch { return $null }
+    } catch { $script:ytTask = $null }
+    return $script:ytLastState
 }
+# 兼容旧调用: 只返回最近一次已知状态, 不阻塞、也不发起新查询
+function Yt-State { return $script:ytLastState }
 
 # ---------- 数据层 ----------
 function Get-TrackKey {
@@ -779,6 +861,8 @@ function Stop-Play {
         Restore-NormalLayout
         $script:ytPlaying = $false
         $script:ytDur = 0
+        $script:ytTask = $null
+        $script:ytLastState = $null
         $script:lblModeTag.Text = ""
         $script:btnPlay.Text = "▶"
         $script:tbProgress.Value = 0
@@ -1202,7 +1286,7 @@ $script:chkAutoStart.Checked = $script:autoStart
 $pnlSidebar.Controls.Add($script:chkAutoStart)
 $script:chkAutoStart.Add_CheckedChanged({ $null = Set-AutoStart $script:chkAutoStart.Checked })
 
-$lblVer = New-Label "v3.6" 0 0 176 16 8 $cSub $false
+$lblVer = New-Label "v3.7" 0 0 176 16 8 $cSub $false
 $pnlSidebar.Controls.Add($lblVer)
 
 # ---------- 主内容区 ----------
@@ -1556,9 +1640,52 @@ if ($script:hasYt) {
         $script:ytCssJs = "(function(){var css=['html,body{height:100%!important;margin:0!important;padding:0!important;background:#000000!important;overflow:hidden!important}','ytd-app{background:#000000!important}','ytd-masthead,#masthead-container,#masthead,#topbar{display:none!important}','#guide,ytd-guide-renderer,ytd-mini-guide-renderer{display:none!important}','#related,#secondary,ytd-comments,#comments,ytd-engagement-panel-section-renderer{display:none!important}','ytd-watch-flexy[flexy]{--ytd-watch-flexy-max-player-width:100%!important;--ytd-watch-flexy-max-height:100%!important}','ytd-watch-flexy[flexy] #primary{width:100%!important;max-width:none!important}','ytd-watch-flexy[flexy] #columns{flex-direction:column!important;width:100%!important}','ytd-watch-flexy[flexy] #player-container{width:100%!important;max-width:none!important;height:100%!important}','#movie_player,.html5-video-player{width:100%!important;height:100%!important}','ytd-watch-metadata,#above-the-fold,#info-container,#title,ytd-video-primary-info-renderer,ytd-video-secondary-info-renderer{display:none!important}'].join('');var st=document.getElementById('mb-hide-css');if(!st){st=document.createElement('style');st.id='mb-hide-css';document.documentElement.appendChild(st);}st.textContent=css;document.body.style.margin='0';})();"
         $script:wbYT.Add_NavigationCompleted({
             param($s, $e)
-            if (-not $e.IsSuccess -or $null -eq $s.CoreWebView2) { return }
+            if (-not $e.IsSuccess -or $null -eq $s.CoreWebView2) { Write-YtLog ("nav-completed success=False"); return }
+            Write-YtLog "nav-completed success=True"
             try { $null = $s.CoreWebView2.ExecuteScriptAsync($script:ytCssJs) } catch { }
         })
+        # WebView2 初始化完成: 立刻套用安全设置, 并补上首次待播的视频
+        # 注意: 每个事件注册都单独 try/catch —— 某个事件名在当前 WebView2 版本里不存在时,
+        # 不能让它把整个 WebView2 功能连累禁用 (hasYt 被置 false)。
+        try {
+            $script:wbYT.Add_CoreWebView2InitializationCompleted({
+                param($s, $e)
+                Write-YtLog ("core-init completed, success=" + $e.IsSuccess)
+                if (-not $e.IsSuccess) { return }
+                Apply-YtSettings
+                try {
+                    $s.CoreWebView2.Add_ScriptDialogOpening({
+                        param($sd, $se)
+                        # 兜底: 即使设置没生效, 也记录下网页弹窗, 便于排查卡死
+                        Write-YtLog ("script-dialog suppressed: " + $se.Kind + " / " + $se.Message)
+                    })
+                } catch { Write-YtLog ("attach ScriptDialogOpening fail: " + $_.Exception.Message) }
+                try {
+                    $s.CoreWebView2.Add_ContainsFullScreenElementChanged({
+                        param($fs, $fe)
+                        Write-YtLog ("fullscreen-element=" + $fs.CoreWebView2.ContainsFullScreenElement)
+                    })
+                } catch { Write-YtLog ("attach FullScreenElement fail: " + $_.Exception.Message) }
+                try {
+                    $s.CoreWebView2.Add_ProcessFailed({
+                        param($pf, $pfe)
+                        Write-YtLog ("process-failed: " + $pfe.ProcessFailedKind)
+                    })
+                } catch { Write-YtLog ("attach ProcessFailed fail: " + $_.Exception.Message) }
+                if ($script:ytPendingVideo -and $script:ytPendingVideo -ne "") {
+                    $vid = $script:ytPendingVideo
+                    $script:ytPendingVideo = ""
+                    try {
+                        $s.Visible = $true
+                        if ($script:picCover) { $script:picCover.Visible = $false }
+                        if ($script:lblCoverEmpty) { $script:lblCoverEmpty.Visible = $false }
+                        $s.Source = [uri]("https://www.youtube.com/watch?v=" + $vid + "&autoplay=1")
+                        Write-YtLog "init-navigate -> $vid"
+                        if ($null -ne $script:cssTimer) { $script:cssCount = 0; $script:cssTimer.Stop(); $script:cssTimer.Start() }
+                    } catch { Write-YtLog ("init-navigate error: " + $_.Exception.Message) }
+                }
+            })
+        } catch { Write-YtLog ("attach CoreWebView2InitializationCompleted fail: " + $_.Exception.Message) }
         $script:cssCount = 0
         $script:cssTimer = New-Object System.Windows.Forms.Timer
         $script:cssTimer.Interval = 2500
@@ -2078,27 +2205,35 @@ function Layout-Player {
 }
 
 function Apply-Layout {
-    $cw = $form.ClientSize.Width
-    $ch = $form.ClientSize.Height
-    if ($cw -lt 600 -or $ch -lt 400) { return }
-    # 侧栏宽度: 大窗口 200, 小窗口 176
-    $sbW = if ($cw -ge 1280) { 200 } else { 176 }
-    $rest = $cw - $sbW
-    # 比例: 完整听页 列表:视频=4:6 (视频优先); 视频播放中再放大到 32:68; 其他页 6:4
-    if ($script:currentPage -eq "free") {
-        $playerRatio = if ($script:ytMaximized) { 0.68 } else { 0.60 }
-    } else {
-        $playerRatio = 0.40
+    # 整体包一层异常保护: 布局在 Resize / 定时器 / 点击事件里被调用,
+    # 一旦抛异常, WinForms 会弹出"未处理异常"模态框并禁用整个主窗口
+    # (表现就是所有按钮含最小化/最大化全部点不动)。
+    try {
+        $cw = $form.ClientSize.Width
+        $ch = $form.ClientSize.Height
+        if ($cw -lt 600 -or $ch -lt 400) { return }
+        # 侧栏宽度: 大窗口 200, 小窗口 176
+        $sbW = if ($cw -ge 1280) { 200 } else { 176 }
+        $rest = $cw - $sbW
+        # 比例: 完整听页 列表:视频=4:6 (视频优先); 视频播放中再放大到 32:68; 其他页 6:4
+        if ($script:currentPage -eq "free") {
+            $playerRatio = if ($script:ytMaximized) { 0.68 } else { 0.60 }
+        } else {
+            $playerRatio = 0.40
+        }
+        $playerW = [int]($rest * $playerRatio)
+        $mainW = $rest - $playerW
+        if ($playerW -lt 10 -or $mainW -lt 10) { return }
+        $pnlSidebar.SetBounds(0, 0, $sbW, $ch)
+        $pnlMain.SetBounds($sbW, 0, $mainW, $ch)
+        $pnlPlayer.SetBounds($sbW + $mainW, 0, $playerW, $ch)
+        Layout-Sidebar
+        Layout-MainHeader
+        Layout-Pages
+        if ($script:ytMaximized) { Layout-PlayerVideo } else { Layout-Player }
+    } catch {
+        Write-YtLog ("layout error: " + $_.Exception.Message)
     }
-    $playerW = [int]($rest * $playerRatio)
-    $mainW = $rest - $playerW
-    $pnlSidebar.SetBounds(0, 0, $sbW, $ch)
-    $pnlMain.SetBounds($sbW, 0, $mainW, $ch)
-    $pnlPlayer.SetBounds($sbW + $mainW, 0, $playerW, $ch)
-    Layout-Sidebar
-    Layout-MainHeader
-    Layout-Pages
-    if ($script:ytMaximized) { Layout-PlayerVideo } else { Layout-Player }
 }
 
 # ---------- 页面切换 ----------
@@ -2151,9 +2286,11 @@ function Toggle-Fullscreen {
 $timer = New-Object System.Windows.Forms.Timer
 $timer.Interval = 1000
 $timer.Add_Tick({
+  # 定时器回调里抛异常会触发 WinForms"未处理异常"模态框并锁死主窗口, 因此整体包 try/catch
+  try {
     # 注: 视频模式下保留了精简控制条 (标题/进度/时间/按钮), 因此仍需轮询更新
     if ($script:playMode -eq "full" -and $script:currentUrl -like "yt:*" -and $null -ne $script:wbYT -and $null -ne $script:wbYT.CoreWebView2) {
-        $st2 = Yt-State
+        $st2 = Yt-PollState    # 非阻塞: 取回上次结果并异步发起下次查询
         if ($null -ne $st2 -and $st2.Dur -gt 0) {
             $script:ytDur = $st2.Dur
             $script:lblTime.Text = ("{0} / {1}" -f (Format-Duration $st2.Pos), (Format-Duration $st2.Dur))
@@ -2181,6 +2318,9 @@ $timer.Add_Tick({
             }
         } catch { }
     }
+  } catch {
+    Write-YtLog ("timer error: " + $_.Exception.Message)
+  }
 })
 $timer.Start()
 
