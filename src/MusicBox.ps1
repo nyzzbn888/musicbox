@@ -158,6 +158,13 @@ $script:L = @{
     'yt.reason_init'     = @{ zh = "原因：WebView2 初始化失败（运行时已装但无法启动）。"; en = "Reason: WebView2 failed to initialize (runtime present but could not start)." }
     'yt.fix_hint'        = @{ zh = "点「是」= 打开修复用的下载页面；点「否」= 改用浏览器播放这个视频；点「取消」= 什么都不做。"; en = "Yes = open the download page that fixes this; No = play the video in your browser; Cancel = do nothing." }
     'yt.fix_opened'      = @{ zh = "已打开修复下载页 · 装好后请重启本程序"; en = "Fix page opened - restart the app after installing" }
+    'btn.skipad'         = @{ zh = "⏭ 跳过广告"; en = "⏭ Skip Ad" }
+    'yt.ad_none'         = @{ zh = "当前没有检测到广告"; en = "No ad detected right now" }
+    'yt.ad_skipping'     = @{ zh = "正在跳过广告..."; en = "Skipping ad..." }
+    'yt.ad_clicked'      = @{ zh = "已点掉广告上的「跳过」按钮"; en = "Clicked the ad's Skip button" }
+    'yt.ad_seeked'       = @{ zh = "已把广告拖到末尾，正片应该马上开始"; en = "Seeked the ad to its end - the video should start now" }
+    'yt.ad_fail'         = @{ zh = "没能跳过（可能是不可跳过的广告）"; en = "Could not skip (the ad may be unskippable)" }
+    'yt.ad_none_playing' = @{ zh = "当前不在播放视频"; en = "No video is playing" }
     'player.mode.full'   = @{ zh = "完整播放"; en = "Full Playback" }
     'player.mode.preview'= @{ zh = "官方试听 30s"; en = "30s Preview" }
     'player.mode.local'  = @{ zh = "本地播放"; en = "Local Playback" }
@@ -343,6 +350,9 @@ $script:ytTask = $null
 $script:ytLastState = $null
 # 首次初始化 WebView2 时暂存待播视频, 就绪后再导航 (避免阻塞 UI 线程去等)
 $script:ytPendingVideo = ""
+# 跳过广告的异步任务 + 状态文字保留到什么时候 (避免被每秒的状态轮询立刻覆盖)
+$script:ytSkipTask = $null
+$script:statusHoldUntil = [datetime]::MinValue
 $script:cacheDir = Join-Path $appBase "cover_cache"
 $script:dataDir = Join-Path $appBase "userdata"
 $script:favorites = @()
@@ -591,6 +601,58 @@ function Yt-Seek {
     param($pos)
     if (-not $script:hasYt -or $null -eq $script:wbYT -or $null -eq $script:wbYT.CoreWebView2) { return }
     try { $null = $script:wbYT.CoreWebView2.ExecuteScriptAsync("(function(){var v=document.querySelector('#movie_player video')||document.querySelector('video');if(v){v.currentTime=$pos;}})();") } catch { }
+}
+
+# ===== 跳过广告 =====
+# 原理: YouTube 的广告与正片共用同一个播放器, 进度条(那条蓝线)覆盖广告时长。
+# 1) 广告上若有官方「跳过」按钮, 直接点它 (用户本来也会点)
+# 2) 否则把广告的 currentTime 直接设到末尾, 等价于把进度条拖到底 -> 广告结束, 正片开始
+function Skip-YtAd {
+    if ($script:playMode -ne "full" -or $script:currentUrl -notlike "yt:*") {
+        $script:lblState.Text = (T 'yt.ad_none_playing'); $script:lblState.ForeColor = $cSub
+        $script:statusHoldUntil = (Get-Date).AddSeconds(3)
+        return
+    }
+    if (-not $script:hasYt -or $null -eq $script:wbYT -or $null -eq $script:wbYT.CoreWebView2) {
+        $script:lblState.Text = (T 'yt.ad_none'); $script:lblState.ForeColor = $cSub
+        $script:statusHoldUntil = (Get-Date).AddSeconds(3)
+        return
+    }
+    try {
+        $js = "(function(){try{" +
+              "var p=document.querySelector('#movie_player');" +
+              "var isAd=p&&(p.classList.contains('ad-showing')||p.classList.contains('ad-interrupting'));" +
+              "if(!isAd){return 'noad';}" +
+              "var b=document.querySelector('.ytp-ad-skip-button,.ytp-ad-skip-button-modern,.ytp-skip-ad-button,.ytp-ad-skip-button-container button');" +
+              "if(b&&b.offsetParent!==null){b.click();return 'clicked';}" +
+              "var v=document.querySelector('#movie_player video');" +
+              "if(v&&v.duration&&isFinite(v.duration)&&v.duration>0){v.currentTime=v.duration;return 'seeked';}" +
+              "return 'fail';}catch(e){return 'err';}})();"
+        Write-YtLog "skip-ad requested"
+        $script:ytSkipTask = $script:wbYT.CoreWebView2.ExecuteScriptAsync($js)
+        $script:lblState.Text = (T 'yt.ad_skipping'); $script:lblState.ForeColor = $cWarn
+        $script:statusHoldUntil = (Get-Date).AddSeconds(3)
+    } catch {
+        Write-YtLog ("skip-ad error: " + $_.Exception.Message)
+    }
+}
+
+# 取回跳过广告的结果并显示 (非阻塞, 由定时器调用)
+function Poll-YtSkip {
+    if ($null -eq $script:ytSkipTask) { return }
+    if (-not $script:ytSkipTask.IsCompleted) { return }
+    try {
+        $r = ([string]$script:ytSkipTask.Result).Trim().Trim([char]0x22)
+        $script:ytSkipTask = $null
+        Write-YtLog ("skip-ad result: " + $r)
+        switch ($r) {
+            "noad"    { $script:lblState.Text = (T 'yt.ad_none'); $script:lblState.ForeColor = $cSub }
+            "clicked" { $script:lblState.Text = (T 'yt.ad_clicked'); $script:lblState.ForeColor = $cSuccess }
+            "seeked"  { $script:lblState.Text = (T 'yt.ad_seeked'); $script:lblState.ForeColor = $cSuccess }
+            default   { $script:lblState.Text = (T 'yt.ad_fail'); $script:lblState.ForeColor = $cWarn }
+        }
+        $script:statusHoldUntil = (Get-Date).AddSeconds(4)
+    } catch { $script:ytSkipTask = $null }
 }
 # 取回上一次异步查询的结果, 并发起下一次查询。
 # 关键: 全程不调用 .Result 同步等待 —— 在 UI 线程上同步等待 WebView2 的异步任务会死锁
@@ -1337,7 +1399,7 @@ $script:chkAutoStart.Checked = $script:autoStart
 $pnlSidebar.Controls.Add($script:chkAutoStart)
 $script:chkAutoStart.Add_CheckedChanged({ $null = Set-AutoStart $script:chkAutoStart.Checked })
 
-$lblVer = New-Label "v3.8.1" 0 0 176 16 8 $cSub $false
+$lblVer = New-Label "v3.9" 0 0 176 16 8 $cSub $false
 $pnlSidebar.Controls.Add($lblVer)
 
 # ---------- 主内容区 ----------
@@ -1912,6 +1974,12 @@ $script:btnStop = New-SecondaryBtn "■" 0 0 56 44 14
 $pnlPlayer.Controls.Add($script:btnStop)
 $script:btnStop.Add_Click({ Stop-Play })
 
+# 跳过广告 (只在视频模式下显示)
+$script:btnSkipAd = New-SecondaryBtn "⏭ 跳过广告" 0 0 118 30 9
+$script:btnSkipAd.Visible = $false
+$pnlPlayer.Controls.Add($script:btnSkipAd)
+$script:btnSkipAd.Add_Click({ Skip-YtAd })
+
 # 收藏 + 音量
 $script:btnFavCur = New-SecondaryBtn "♡  收藏" 0 0 116 36
 $pnlPlayer.Controls.Add($script:btnFavCur)
@@ -2150,7 +2218,13 @@ function Layout-PlayerVideo {
         if ($null -ne $c) { $c.Visible = $true }
     }
     $y = $by + $bh + 12
-    $script:lblSongTitle.SetBounds(24, $y, $pw - 48, 28)
+    if ($null -ne $script:btnSkipAd) {
+        $script:btnSkipAd.Visible = $true
+        $script:btnSkipAd.SetBounds($pw - 24 - 118, $y, 118, 28)
+        $script:lblSongTitle.SetBounds(24, $y, $pw - 48 - 126, 28)
+    } else {
+        $script:lblSongTitle.SetBounds(24, $y, $pw - 48, 28)
+    }
     $y += 32
     $script:tbProgress.SetBounds(24, $y, $pw - 48, 24)
     $y += 28
@@ -2176,6 +2250,7 @@ function Layout-Player {
     foreach ($c in @($script:lblSongTitle,$script:lblSongArtist,$script:lblSongAlbum,$script:lblModeTag,$script:tbProgress,$script:lblTime,$script:btnPrev,$script:btnPlay,$script:btnPause,$script:btnNext,$script:btnStop,$script:btnFavCur,$script:lblVol,$script:tbVol,$script:lblState)) {
         if ($null -ne $c) { $c.Visible = $true }
     }
+    if ($null -ne $script:btnSkipAd) { $script:btnSkipAd.Visible = $false }
     # 紧凑模式: 高度不足时隐藏平台入口和睡眠定时
     $compact = ($ph -lt 780)
     $showPlatforms = (-not $compact)
@@ -2357,14 +2432,19 @@ $timer.Add_Tick({
   try {
     # 注: 视频模式下保留了精简控制条 (标题/进度/时间/按钮), 因此仍需轮询更新
     if ($script:playMode -eq "full" -and $script:currentUrl -like "yt:*" -and $null -ne $script:wbYT -and $null -ne $script:wbYT.CoreWebView2) {
+        Poll-YtSkip            # 非阻塞: 取回"跳过广告"的结果并显示
         $st2 = Yt-PollState    # 非阻塞: 取回上次结果并异步发起下次查询
         if ($null -ne $st2 -and $st2.Dur -gt 0) {
             $script:ytDur = $st2.Dur
             $script:lblTime.Text = ("{0} / {1}" -f (Format-Duration $st2.Pos), (Format-Duration $st2.Dur))
             $pct = [math]::Round($st2.Pos / $st2.Dur * 1000)
             if ($script:tbProgress.Value -ne $pct) { $script:tbProgress.Value = $pct }
-            if ($st2.Playing) { $script:btnPlay.Text = "❚❚"; $script:lblState.Text = (T 'player.state.playing'); $script:lblState.ForeColor = $cAccent; $script:ytPlaying = $true }
-            else { $script:btnPlay.Text = "▶"; $script:lblState.Text = (T 'player.state.paused'); $script:lblState.ForeColor = $cWarn; $script:ytPlaying = $false }
+            if ($st2.Playing) { $script:btnPlay.Text = "❚❚"; $script:ytPlaying = $true } else { $script:btnPlay.Text = "▶"; $script:ytPlaying = $false }
+            # 刚点过"跳过广告"时, 状态栏保留提示几秒, 不被这里的播放/暂停覆盖
+            if ((Get-Date) -ge $script:statusHoldUntil) {
+                if ($st2.Playing) { $script:lblState.Text = (T 'player.state.playing'); $script:lblState.ForeColor = $cAccent }
+                else { $script:lblState.Text = (T 'player.state.paused'); $script:lblState.ForeColor = $cWarn }
+            }
             if ($st2.Pos -ge ($st2.Dur - 1) -and $st2.Dur -gt 5) { Auto-NextTrack }
         }
         return

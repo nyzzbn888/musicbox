@@ -16,8 +16,8 @@
 
 | 方式 | 文件 | 说明 |
 |---|---|---|
-| 🧳 **绿色版（推荐，最稳）** | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.8.1/MusicBox-Share.zip) | 解压即用，**内含内置播放器必需的 WebView2 DLL**，不写注册表、不装任何东西 |
-| 🚀 **一键安装**<br>（⚠️ 请用 **Chrome / 火狐** 下载，Edge 会提示报错并拦截） | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.8.1/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，免管理员权限，可在「应用和功能」里卸载 |
+| 🧳 **绿色版（推荐，最稳）** | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.9/MusicBox-Share.zip) | 解压即用，**内含内置播放器必需的 WebView2 DLL**，不写注册表、不装任何东西 |
+| 🚀 **一键安装**<br>（⚠️ 请用 **Chrome / 火狐** 下载，Edge 会提示报错并拦截） | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.9/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，免管理员权限，可在「应用和功能」里卸载 |
 
 > ⚠️ **请不要只单独拿 `MusicBox.exe`**：内置视频播放器需要同目录下的 3 个 WebView2 DLL
 > （`Microsoft.Web.WebView2.Core.dll` / `Microsoft.Web.WebView2.WinForms.dll` / `WebView2Loader.dll`）。
@@ -42,6 +42,7 @@
 | 🔍 全网搜索试听（Deezer 官方 30 秒片段），支持搜索历史 | Global search with official Deezer 30-second previews + search history |
 | 📺 YouTube 完整播放，内置播放器 16:9 大画面（按面板宽度铺满） | Full playback via YouTube in a built-in 16:9 player that fills the panel |
 | 🎵 Spotify 官方榜单，内置浏览器直接浏览各流派歌单 | Spotify official charts browsed in an embedded browser |
+| ⏭ 视频播放时显示「跳过广告」按钮，一点即跳过 | One-click "Skip Ad" button while a video is playing |
 | 💻 本地音乐播放（MP3 / FLAC / WAV / M4A / WMA），支持拖拽导入 | Local playback (MP3 / FLAC / WAV / M4A / WMA) with drag & drop |
 | ♥ 收藏夹 · ☰ 自建歌单 · 播放历史 | Favorites · custom playlists · play history |
 | ⏱ 睡眠定时（15/30/60 分钟）、播完自动下一首、记住上次播放 | Sleep timer (15/30/60 min), auto-next, resume last played |

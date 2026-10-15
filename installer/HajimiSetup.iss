@@ -11,7 +11,7 @@
 ; ============================================================
 
 #define MyAppName "hajimi客户端"
-#define MyAppVersion "3.8.1"
+#define MyAppVersion "3.9"
 #define MyAppPublisher "hajimi"
 #define MyAppExeName "MusicBox.exe"
 
