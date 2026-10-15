@@ -10,6 +10,22 @@
 
 ---
 
+---
+
+## ⬇️ 下载 · Download
+
+| 方式 | 文件 | 说明 |
+|---|---|---|
+| 🚀 **一键安装**（推荐） | [`HajimiClient-Setup.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.6/HajimiClient-Setup.exe) | 像 QQ音乐 那样双击装完，自动创建桌面 / 开始菜单快捷方式，**免管理员权限**，可在「应用和功能」里卸载 |
+| 📦 免安装 | [`MusicBox.exe`](https://github.com/nyzzbn888/musicbox/releases/download/v3.6/MusicBox.exe) | 单文件双击即用，不写注册表 |
+| 🧳 分享包 | [`MusicBox-Share.zip`](https://github.com/nyzzbn888/musicbox/releases/download/v3.6/MusicBox-Share.zip) | 含 WebView2 运行库 DLL，解压即用 |
+
+【一键安装器长这样】
+
+![安装程序](docs/screenshot-setup.png)
+
+> 安装位置默认为 `%LOCALAPPDATA%\Programs\hajimi客户端`，装完在桌面 / 开始菜单生成「hajimi客户端」快捷方式。
+> 卸载：运行安装目录下的 `Uninstall.exe`，或在「设置 → 应用 → 已安装的应用」里找到 hajimi客户端 卸载（会询问是否保留收藏与歌单）。
 ## ✨ 功能 · Features
 
 | 中文 | English |
